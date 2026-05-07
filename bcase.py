@@ -1,4 +1,4 @@
-import streamlit as st  必须先导入 streamlit，后面才能用 st.xxx
+import streamlit as st # 必须先导入 streamlit，后面才能用 st.xxx
 import pandas as pd
 import numpy as np
 import io
