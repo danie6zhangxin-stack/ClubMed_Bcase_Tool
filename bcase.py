@@ -1,4 +1,13 @@
-# 访问权限控制
+import streamlit as st  # 必须先导入 streamlit，后面才能用 st.xxx
+import pandas as pd
+import numpy as np
+import io
+import matplotlib.pyplot as plt
+from openpyxl.styles import PatternFill, Font, Alignment
+from openpyxl.utils import get_column_letter
+from openpyxl.drawing.image import Image as OpenpyxlImage
+
+# --- 1. 访问权限控制 (必须放在 import 之后) ---
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
@@ -6,12 +15,12 @@ if not st.session_state["authenticated"]:
     st.title("🔐 Club Med B-Case Tool")
     password = st.text_input("请输入访问密码", type="password")
     if st.button("登录"):
-        if password == "CM2026Daniel": # 这里设置你的专属密码
+        if password == "CM2024Daniel":  # 你的专属密码
             st.session_state["authenticated"] = True
             st.rerun()
         else:
             st.error("密码错误，请联系 Daniel")
-    st.stop() # 没登录前，不执行下面的核心代码
+    st.stop()
 
 # %%writefile app.py
 # import streamlit as st
