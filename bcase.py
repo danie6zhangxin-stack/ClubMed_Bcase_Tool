@@ -1,3 +1,18 @@
+# 访问权限控制
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if not st.session_state["authenticated"]:
+    st.title("🔐 Club Med B-Case Tool")
+    password = st.text_input("请输入访问密码", type="password")
+    if st.button("登录"):
+        if password == "CM2026Daniel": # 这里设置你的专属密码
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("密码错误，请联系 Daniel")
+    st.stop() # 没登录前，不执行下面的核心代码
+
 # %%writefile app.py
 # import streamlit as st
 # import pandas as pd
