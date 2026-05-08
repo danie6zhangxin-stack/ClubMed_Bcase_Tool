@@ -7,21 +7,6 @@ from openpyxl.styles import PatternFill, Font, Alignment
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as OpenpyxlImage
 
-# --- 1. 访问权限控制 (必须放在 import 之后) ---
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-
-if not st.session_state["authenticated"]:
-    st.title("🔐 Club Med B-Case Tool")
-    password = st.text_input("请输入访问密码", type="password")
-    if st.button("登录"):
-        if password == "CM2024Daniel":  # 你的专属密码
-            st.session_state["authenticated"] = True
-            st.rerun()
-        else:
-            st.error("密码错误，请联系 Daniel")
-    st.stop()
-
 # --- 1. 高级财务格式化与红绿灯引擎 ---
 def format_fin(val, row_name=""):
     if pd.isna(val) or (isinstance(val, str) and val.strip() in ["-", ""]): return "-"
@@ -45,9 +30,7 @@ def render_table(df_raw, item_col="P&L Line Item", variance_cols=["Variance"]):
         row_name_raw = str(disp_row[item_col])
         row_name = row_name_raw.strip()
         
-        # 核心加粗行
         is_bold_row = row_name in ["Business volume HT", "Total revenue", "Variable margin", "GOP Total"]
-        # 降级从属行
         is_sub_row = row_name_raw.startswith("  -")
         
         for col in df_disp.columns:
@@ -154,11 +137,14 @@ def merge_periods(d1, d2):
     res['ETP_GE'] = (d1['ETP_GE']*d1['N_months'] + d2['ETP_GE']*d2['N_months']) / res['N_months'] if res['N_months'] else 0
     return res
 
-# --- 3. 核心 P&L 分配算法 ---
+# --- 3. 核心 P&L 分配算法 (加入 OCC%) ---
 def get_pl_flow(d, detailed=False, is_benchmark=False):
     hn = d['HN']
+    capa = d.get('Capa', 0)
     bv_ttc = d['BV']
+    
     adr = (bv_ttc * 1000 / hn) if hn else 0
+    occ = (hn / capa) if capa != 0 else 0  # 实时计算 OCC%
     
     tot_bv_ttc = bv_ttc
     cm_bv_ttc = bv_ttc * 0.3
@@ -178,8 +164,6 @@ def get_pl_flow(d, detailed=False, is_benchmark=False):
     cm_rev = cm_bv_ttc
     
     m_fee = own_rev * 0.02
-    
-    # 修复：取薪资的绝对值计算，确保 GO fee 算出来是正数，再执行分配
     go_fee = d['GO_Fee_Raw'] if is_benchmark else abs(d.get('Sal_GOF', 0) + d.get('Sal_GOL', 0)) * 0.20
     
     vc_base = d.get('VC_FB', 0) + d.get('VC_Ski', 0) + d.get('VC_Other', 0)
@@ -204,6 +188,7 @@ def get_pl_flow(d, detailed=False, is_benchmark=False):
     rows = [
         ["ADR (RMB)", adr, np.nan, adr],
         ["HN sold", hn, np.nan, hn],
+        ["OCC %", occ, np.nan, occ],  # 新增的 OCC% 监控列
         ["Business Volume TTC", tot_bv_ttc, cm_bv_ttc, own_bv_ttc],
         ["VAT on outside turnover", tot_vat, cm_vat, own_vat],
         ["Business volume HT", tot_bv_ht, cm_bv_ht, own_bv_ht],
@@ -282,7 +267,23 @@ def style_excel_sheet(ws, df):
     for col in range(2, len(df.columns)+1): ws.column_dimensions[get_column_letter(col)].width = 15
 
 # --- Streamlit UI ---
-st.set_page_config(layout="wide", page_title="B-Case Decision Engine Pro V38")
+st.set_page_config(layout="wide", page_title="B-Case Decision Engine Pro V39")
+
+# --- 权限控制 ---
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if not st.session_state["authenticated"]:
+    st.title("🔐 Club Med B-Case Tool")
+    password = st.text_input("请输入访问密码", type="password")
+    if st.button("登录"):
+        if password == "CM2026Daniel": 
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("密码错误，请联系 Daniel")
+    st.stop() 
+
 st.sidebar.header("📂 数字化底稿")
 uploaded_file = st.sidebar.file_uploader("上传 RAW DATA.csv", type="csv")
 
@@ -315,16 +316,21 @@ if uploaded_file:
     st.divider()
     st.header("📥 模块二：业务录入 (V1 Forecast)")
     x_ratio = st.number_input("参数 X (Local Income 占 BV TTC 的比例 %)", value=10.0) / 100
-    input_df = pd.DataFrame({"Month": MONTH_MAP["Full Year"], "Capacity": [23000.0]*12, "HN Sold": [8000.0]*12, "ADR (RMB)": [1200.0]*12})
+    
+    # 提取 Full Year 的 Capacity 作为默认值
+    d_ref_full = get_bench_data(df, sel_resort, sel_year, MONTH_MAP["Full Year"])
+    capa_default = d_ref_full['Capa'] / 12 if d_ref_full['Capa'] else 23000.0
+    
+    input_df = pd.DataFrame({"Month": MONTH_MAP["Full Year"], "Capacity": [capa_default]*12, "HN Sold": [8000.0]*12, "ADR (RMB)": [1200.0]*12})
     e_df = st.data_editor(input_df, hide_index=True)
     e_df['BV'] = (e_df['HN Sold'] * e_df['ADR (RMB)']) / 1000
 
     def get_v1_stats(m_list):
         ref = get_bench_data(df, sel_resort, sel_year, m_list)
         sub = e_df[e_df['Month'].isin(m_list)]
-        hn, bv = sub['HN Sold'].sum(), sub['BV'].sum()
+        hn, bv, capa = sub['HN Sold'].sum(), sub['BV'].sum(), sub['Capacity'].sum()
         v1 = ref.copy()
-        v1['HN'], v1['BV'], v1['LI'] = hn, bv, bv * x_ratio
+        v1['HN'], v1['BV'], v1['Capa'], v1['LI'] = hn, bv, capa, bv * x_ratio
         v1['VC_FB'] = (ref['VC_FB']/ref['HN'] * hn) if ref['HN']!=0 else 0
         v1['VC_Ski'] = (ref['VC_Ski']/ref['HN'] * hn) if ref['HN']!=0 else 0
         v1['VC_Other'] = (ref['VC_Other']/ref['HN'] * hn) if ref['HN']!=0 else 0
@@ -356,16 +362,17 @@ if uploaded_file:
     
     def render_m4_adj(p_name, v1_data, bench_data):
         st.subheader(f"🛠️ {p_name} 实时精修面板")
-        nm = bench_data['N_months'] or 1
         hn_b = bench_data['HN']
         
         fb_uc = (bench_data['VC_FB']*1000)/hn_b if hn_b else 0
         ski_uc = (bench_data['VC_Ski']*1000)/hn_b if hn_b else 0
-        s_f = (bench_data['Sal_GOF']*1000)/(bench_data['ETP_GOF']*nm) if bench_data['ETP_GOF'] else 0
-        s_l = (bench_data['Sal_GOL']*1000)/(bench_data['ETP_GOL']*nm) if bench_data['ETP_GOL'] else 0
-        s_ge = (bench_data['Sal_GE']*1000)/(bench_data['ETP_GE']*nm) if bench_data['ETP_GE'] else 0
         
-        items = ["F&B Unit (RMB/HN)", "Ski Unit (RMB/HN)", "Monthly Sal F-GO", "Monthly Sal L-GO", "Monthly Sal GE"]
+        # 修复逻辑：直接除以 ETP，不除以月份数
+        s_f = (bench_data['Sal_GOF']*1000)/bench_data['ETP_GOF'] if bench_data['ETP_GOF'] else 0
+        s_l = (bench_data['Sal_GOL']*1000)/bench_data['ETP_GOL'] if bench_data['ETP_GOL'] else 0
+        s_ge = (bench_data['Sal_GE']*1000)/bench_data['ETP_GE'] if bench_data['ETP_GE'] else 0
+        
+        items = ["F&B Unit (RMB/HN)", "Ski Unit (RMB/HN)", "Sal F-GO per ETP", "Sal L-GO per ETP", "Sal GE per ETP"]
         etp_bases = ["-", "-", bench_data['ETP_GOF'], bench_data['ETP_GOL'], bench_data['ETP_GE']]
         befores = [fb_uc, ski_uc, s_f, s_l, s_ge]
         
@@ -386,9 +393,11 @@ if uploaded_file:
         v2 = v1_data.copy()
         v2['VC_FB'] = (afters[0] * v2['HN']) / 1000
         v2['VC_Ski'] = (afters[1] * v2['HN']) / 1000
-        v2['Sal_GOF'] = (afters[2] * bench_data['ETP_GOF'] * nm) / 1000
-        v2['Sal_GOL'] = (afters[3] * bench_data['ETP_GOL'] * nm) / 1000
-        v2['Sal_GE'] = (afters[4] * bench_data['ETP_GE'] * nm) / 1000
+        
+        # 修复逻辑：直接乘以 ETP
+        v2['Sal_GOF'] = (afters[2] * bench_data['ETP_GOF']) / 1000
+        v2['Sal_GOL'] = (afters[3] * bench_data['ETP_GOL']) / 1000
+        v2['Sal_GE'] = (afters[4] * bench_data['ETP_GE']) / 1000
         return v2
         
     c4_1, c4_2 = st.columns(2)
@@ -422,7 +431,7 @@ if uploaded_file:
         v3['BV'] *= (1+a_adr)*(1+a_hn)
         v3['LI'] = v3['BV'] * x_ratio
         v3['VC_FB'] *= (1+a_hn); v3['VC_Ski'] *= (1+a_hn); v3['VC_Other'] *= (1+a_hn)
-        st.write(f"After (V3) -> ADR: **{adr_b*(1+a_adr):,.1f}** RMB | HN: **{v3['HN']:,.0f}**")
+        st.write(f"After (V3) -> ADR: **{adr_b*(1+a_adr):,.1f}** RMB | HN: **{v3['HN']:,.0f}** | OCC: **{v3['HN']/v3['Capa'] if v3['Capa']!=0 else 0:.1%}**")
         return v3
 
     c5_1, c5_2 = st.columns(2)
@@ -443,19 +452,24 @@ if uploaded_file:
     # --- 模块六 ---
     st.divider()
     st.header("📈 模块六：10年 P&L 动态模拟沙盘")
-    st.write("设置 YoY 增长率。V3 为第 3 年基准，Y01/Y02 向前折减（Y02基于Y03降低，Y01基于Y02降低），Y04-Y10 叠加复利。")
+    st.write("设置 YoY 增长率。V3 为第 3 年基准，系统会动态推算 Capacity，确保 OCC% 测算真实可靠。")
     
     yoy_df = pd.DataFrame({"Year": [f"Y0{i}" if i<10 else f"Y{i}" for i in range(1, 11)], "Capa Growth %": [0.0]*10, "ADR Growth %": [-10.0, -10.0, 0.0] + [2.0]*7, "HN Growth %": [-20.0, -20.0, 0.0] + [3.0]*7, "Inflation %": [0.0]*10})
     e_yoy = st.data_editor(yoy_df, hide_index=True)
     
     if st.button("🚀 生成10年完整报表与折线图"):
-        m_hn, m_adr, m_inf = [1.0]*11, [1.0]*11, [1.0]*11
+        m_hn, m_adr, m_inf, m_capa = [1.0]*11, [1.0]*11, [1.0]*11, [1.0]*11
         for i in range(4, 11):
+            m_capa[i] = m_capa[i-1] * (1 + e_yoy.loc[i-1, 'Capa Growth %']/100)
             m_hn[i] = m_hn[i-1] * (1 + e_yoy.loc[i-1, 'HN Growth %']/100)
             m_adr[i] = m_adr[i-1] * (1 + e_yoy.loc[i-1, 'ADR Growth %']/100)
             m_inf[i] = m_inf[i-1] * (1 + e_yoy.loc[i-1, 'Inflation %']/100)
+            
+        m_capa[2] = 1.0 * (1 + e_yoy.loc[1, 'Capa Growth %']/100)
         m_hn[2] = 1.0 * (1 + e_yoy.loc[1, 'HN Growth %']/100)
         m_adr[2] = 1.0 * (1 + e_yoy.loc[1, 'ADR Growth %']/100)
+        
+        m_capa[1] = m_capa[2] * (1 + e_yoy.loc[0, 'Capa Growth %']/100)
         m_hn[1] = m_hn[2] * (1 + e_yoy.loc[0, 'HN Growth %']/100)
         m_adr[1] = m_adr[2] * (1 + e_yoy.loc[0, 'ADR Growth %']/100)
 
@@ -465,6 +479,7 @@ if uploaded_file:
         for y in range(1, 11):
             yr_str = f"Y0{y}" if y<10 else f"Y{y}"
             d_y = v3_full.copy()
+            d_y['Capa'] *= m_capa[y]  # 动态容量
             d_y['HN'] *= m_hn[y]
             d_y['BV'] = d_y['HN'] * (v3_full['BV']/v3_full['HN'] * m_adr[y]) if v3_full['HN']!=0 else 0
             d_y['LI'] = d_y['BV'] * x_ratio
