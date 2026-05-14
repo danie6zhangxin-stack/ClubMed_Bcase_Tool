@@ -139,7 +139,7 @@ def get_pl_flow(d, detailed=False, is_benchmark=False):
     bv_ttc = d['BV']
     
     adr = (bv_ttc * 1000 / hn) if hn else 0
-    occ = (hn / capa) if capa != 0 else 0  # 实时计算 OCC%
+    occ = (hn / capa) if capa != 0 else 0
     
     tot_bv_ttc = bv_ttc
     cm_bv_ttc = bv_ttc * 0.3
@@ -261,10 +261,20 @@ def style_excel_sheet(ws, df):
     ws.column_dimensions['A'].width = 38
     for col in range(2, len(df.columns)+1): ws.column_dimensions[get_column_letter(col)].width = 15
 
+# --- 🌟 居中高级模块标题生成器 ---
+def render_module_header(title, icon=""):
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, #1D263B 0%, #2A3650 100%); padding: 18px 20px; border-radius: 10px; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+        <h2 style="margin: 0; color: #FFFFFF; font-family: 'Playfair Display', serif; font-size: 1.8rem; letter-spacing: 1px;">
+            <span style="color: #A64B35; margin-right: 10px;">{icon}</span>{title}
+        </h2>
+    </div>
+    """, unsafe_allow_html=True)
+
 # --- Streamlit UI ---
 st.set_page_config(layout="wide", page_title="B-Case Decision Engine Pro V39")
 
-# --- CSS 全局覆盖 (与迎宾页面字体对齐) ---
+# --- CSS 全局覆盖 (麦肯锡风 Tracker + 千分位对齐) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@300;400;500;600&display=swap');
@@ -272,9 +282,30 @@ st.markdown("""
     h1, h2, h3 { font-family: 'Playfair Display', serif !important; color: #1D263B; }
     .stDataFrame { border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.03); }
     .stSidebar { background-color: #F8F9FA !important; border-right: 1px solid #EAECEF; }
+    
+    /* 🌟 将默认的 Tab 样式改造为高级业务进度条 (Wizard Flow) */
+    div[data-testid="stTabs"] { gap: 0; }
+    div[data-testid="stTabs"] button {
+        flex: 1;
+        font-family: 'Inter', sans-serif;
+        font-weight: 600;
+        color: #6C757D;
+        background-color: #F8F9FA;
+        border: 1px solid #EAECEF;
+        border-bottom: 2px solid transparent;
+        border-radius: 8px 8px 0 0;
+        padding: 14px 10px;
+        margin: 0 4px;
+        transition: all 0.3s ease;
+    }
+    div[data-testid="stTabs"] button[aria-selected="true"] {
+        background-color: #FFFFFF;
+        color: #1D263B;
+        border-bottom: 4px solid #A64B35;
+        box-shadow: 0 -4px 10px rgba(0,0,0,0.03);
+    }
 </style>
 """, unsafe_allow_html=True)
-
 
 # --- 权限控制 ---
 if "authenticated" not in st.session_state:
@@ -298,15 +329,13 @@ if uploaded_file:
     df = pd.read_csv(uploaded_file)
     df.columns = [c.strip() for c in df.columns]
     
-    # 🌟 核心修补：全局极致清洗，彻底消除任何会导致匹配为空的字符/空格后缀！
+    # 彻底数据净化
     for col in ['Resort', 'Year', 'Month', 'Line_Item']:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip()
             if col == 'Year':
-                # 剔除可能在解析时产生的 .0 浮点后缀
                 df[col] = df[col].apply(lambda x: x[:-2] if x.endswith('.0') else x)
     
-    # 🌟 级联筛选器
     resorts = sorted(df['Resort'].unique())
     sel_resort = st.sidebar.selectbox("选择度假村", resorts)
     
@@ -314,261 +343,296 @@ if uploaded_file:
     available_years = sorted(available_years, reverse=True)
     sel_year = st.sidebar.selectbox("选择年度", available_years)
 
-    # --- 模块一 ---
-    st.header(f"📊 模块一：{sel_resort} {sel_year} 基准看板")
-    m1_mode = st.radio("展现维度：", ["By Season (Winter/Summer)", "By Semester (S1/S2)"], horizontal=True)
+    # 🌟 核心排版变革：构建顶级的水平导航向导 (Horizontal Tabs)
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "STEP 1: 基准看板", 
+        "STEP 2: 业务预测", 
+        "STEP 3: 差异分析", 
+        "STEP 4: 成本精修", 
+        "STEP 5: 压力测试", 
+        "STEP 6: 十年沙盘"
+    ])
+
+    m1_mode = st.sidebar.radio("展现维度 (全局)：", ["By Season (Winter/Summer)", "By Semester (S1/S2)"])
     m1_cols = ["Winter", "Summer", "Full Year"] if "Season" in m1_mode else ["S1", "S2", "Full Year"]
     p1_name, p2_name = m1_cols[0], m1_cols[1]
 
-    st.subheader("1.1 核心运营指标")
-    ops_res = []
-    for c in m1_cols:
-        d = get_bench_data(df, sel_resort, sel_year, MONTH_MAP[c])
-        ops_res.append([d['Capa'], d['HN'], d['BV'], (d['BV']*1000)/d['HN'] if d['HN']!=0 else 0, d['HN']/d['Capa'] if d['Capa']!=0 else 0])
-    ops_df = pd.DataFrame(ops_res, index=m1_cols, columns=["Capacity", "HN sold", "BV total (kRMB)", "ADR (RMB)", "OCC %"]).T
-    render_table(ops_df.reset_index(), item_col="index")
-
-    st.subheader("1.2 P&L Flow 利益分配")
-    m1_sel = st.selectbox("选择 P&L 展示区间", m1_cols)
-    render_table(get_pl_flow(get_bench_data(df, sel_resort, sel_year, MONTH_MAP[m1_sel]), detailed=False, is_benchmark=True))
-
-    # --- 模块二 ---
-    st.divider()
-    st.header("📥 模块二：业务录入 (V1 Forecast)")
-    x_ratio = st.number_input("参数 X (Local Income 占 BV TTC 的比例 %)", value=10.0) / 100
-    
-    d_ref_full = get_bench_data(df, sel_resort, sel_year, MONTH_MAP["Full Year"])
-    capa_default = d_ref_full['Capa'] / 12 if d_ref_full['Capa'] else 23000.0
-    
-    input_df = pd.DataFrame({"Month": MONTH_MAP["Full Year"], "Capacity": [capa_default]*12, "HN Sold": [8000.0]*12, "ADR (RMB)": [1200.0]*12})
-    e_df = st.data_editor(input_df, hide_index=True)
-    e_df['BV'] = (e_df['HN Sold'] * e_df['ADR (RMB)']) / 1000
-
-    def get_v1_stats(m_list):
-        ref = get_bench_data(df, sel_resort, sel_year, m_list)
-        sub = e_df[e_df['Month'].isin(m_list)]
-        hn, bv, capa = sub['HN Sold'].sum(), sub['BV'].sum(), sub['Capacity'].sum()
-        v1 = ref.copy()
-        v1['HN'], v1['BV'], v1['Capa'], v1['LI'] = hn, bv, capa, bv * x_ratio
-        v1['VC_FB'] = (ref['VC_FB']/ref['HN'] * hn) if ref['HN']!=0 else 0
-        v1['VC_Ski'] = (ref['VC_Ski']/ref['HN'] * hn) if ref['HN']!=0 else 0
-        v1['VC_Other'] = (ref['VC_Other']/ref['HN'] * hn) if ref['HN']!=0 else 0
-        return v1
-
-    v1_p1, v1_p2 = get_v1_stats(MONTH_MAP[p1_name]), get_v1_stats(MONTH_MAP[p2_name])
-    v1_full = merge_periods(v1_p1, v1_p2)
-
-    # --- 模块三 ---
-    st.divider()
-    st.header("📉 模块三：V1 vs Benchmark 差异分析")
-    c3_1, c3_2 = st.columns(2)
-    m3_sel = c3_1.selectbox("选择对比区间 (V1 vs Bench)", m1_cols, key="m3")
-    m3_view = c3_2.radio("选择查看视角:", ["Total View", "CM View", "Owner View"], horizontal=True, key="m3_v")
-    
-    d_m3_bench = get_bench_data(df, sel_resort, sel_year, MONTH_MAP[m3_sel])
-    d_m3_v1 = v1_full if m3_sel == "Full Year" else (v1_p1 if m3_sel == p1_name else v1_p2)
-    
-    f3_b, f3_v1 = get_pl_flow(d_m3_bench, is_benchmark=True), get_pl_flow(d_m3_v1)
-    df3_b_f, df3_v1_f = filter_pl_view(f3_b, m3_view), filter_pl_view(f3_v1, m3_view)
-    
-    df_m3 = pd.DataFrame({"P&L Line Item": f3_b["P&L Line Item"], "Bench": df3_b_f.iloc[:, 1], "V1 Forecast": df3_v1_f.iloc[:, 1]})
-    df_m3["Variance"] = df_m3["V1 Forecast"] - df_m3["Bench"]
-    render_table(df_m3, variance_cols=["Variance"])
-
-    # --- 模块四 ---
-    st.divider()
-    st.header(f"⚙️ 模块四：成本端双通道精修 (V2 Budget - {p1_name} & {p2_name})")
-    
-    def render_m4_adj(p_name, v1_data):
-        st.subheader(f"🛠️ {p_name} 实时精修面板")
+    # ==========================
+    # 📌 TAB 1: 模块一 
+    # ==========================
+    with tab1:
+        render_module_header(f"模块一：{sel_resort} {sel_year} 基准看板", "📊")
         
-        # 🌟 修正回调：完全基于 v1_data (即你模块二刚刚计算出的 V1 基数) 计算当前的单价和人效
-        hn_v1 = v1_data['HN']
+        st.subheader("1.1 核心运营指标")
+        ops_res = []
+        for c in m1_cols:
+            d = get_bench_data(df, sel_resort, sel_year, MONTH_MAP[c])
+            ops_res.append([d['Capa'], d['HN'], d['BV'], (d['BV']*1000)/d['HN'] if d['HN']!=0 else 0, d['HN']/d['Capa'] if d['Capa']!=0 else 0])
+        ops_df = pd.DataFrame(ops_res, index=m1_cols, columns=["Capacity", "HN sold", "BV total (kRMB)", "ADR (RMB)", "OCC %"]).T
+        render_table(ops_df.reset_index(), item_col="index")
+
+        st.subheader("1.2 P&L Flow 利益分配")
+        m1_sel = st.selectbox("选择 P&L 展示区间", m1_cols)
+        render_table(get_pl_flow(get_bench_data(df, sel_resort, sel_year, MONTH_MAP[m1_sel]), detailed=False, is_benchmark=True))
         
-        fb_uc = (v1_data['VC_FB']*1000)/hn_v1 if hn_v1 else 0
-        ski_uc = (v1_data['VC_Ski']*1000)/hn_v1 if hn_v1 else 0
+        st.markdown("<div style='text-align: right; color: #A64B35; font-weight: bold; margin-top: 20px;'>请点击上方标签页进入 STEP 2 ➡️</div>", unsafe_allow_html=True)
+
+    # ==========================
+    # 📌 TAB 2: 模块二
+    # ==========================
+    with tab2:
+        render_module_header("模块二：业务录入 (V1 Forecast)", "📥")
         
-        s_f = (v1_data['Sal_GOF']*1000)/v1_data['ETP_GOF'] if v1_data['ETP_GOF'] else 0
-        s_l = (v1_data['Sal_GOL']*1000)/v1_data['ETP_GOL'] if v1_data['ETP_GOL'] else 0
-        s_ge = (v1_data['Sal_GE']*1000)/v1_data['ETP_GE'] if v1_data['ETP_GE'] else 0
+        x_ratio = st.number_input("参数 X (Local Income 占 BV TTC 的比例 %)", value=10.0) / 100
         
-        items = ["F&B Unit (RMB/HN)", "Ski Unit (RMB/HN)", "Sal F-GO per ETP", "Sal L-GO per ETP", "Sal GE per ETP"]
-        etp_bases = ["-", "-", v1_data['ETP_GOF'], v1_data['ETP_GOL'], v1_data['ETP_GE']]
-        befores = [fb_uc, ski_uc, s_f, s_l, s_ge]
+        d_ref_full = get_bench_data(df, sel_resort, sel_year, MONTH_MAP["Full Year"])
+        capa_default = d_ref_full['Capa'] / 12 if d_ref_full['Capa'] else 23000.0
         
-        rc = st.columns([3, 2, 2, 2, 2])
-        for col, title in zip(rc, ["Cost Items", "Base(HN/ETP)", "Before(V1)", "Adj %", "After(V2)"]): col.markdown(f"**{title}**")
+        input_df = pd.DataFrame({"Month": MONTH_MAP["Full Year"], "Capacity": [capa_default]*12, "HN Sold": [8000.0]*12, "ADR (RMB)": [1200.0]*12})
+        e_df = st.data_editor(input_df, hide_index=True)
+        e_df['BV'] = (e_df['HN Sold'] * e_df['ADR (RMB)']) / 1000
+
+        def get_v1_stats(m_list):
+            ref = get_bench_data(df, sel_resort, sel_year, m_list)
+            sub = e_df[e_df['Month'].isin(m_list)]
+            hn, bv, capa = sub['HN Sold'].sum(), sub['BV'].sum(), sub['Capacity'].sum()
+            v1 = ref.copy()
+            v1['HN'], v1['BV'], v1['Capa'], v1['LI'] = hn, bv, capa, bv * x_ratio
+            v1['VC_FB'] = (ref['VC_FB']/ref['HN'] * hn) if ref['HN']!=0 else 0
+            v1['VC_Ski'] = (ref['VC_Ski']/ref['HN'] * hn) if ref['HN']!=0 else 0
+            v1['VC_Other'] = (ref['VC_Other']/ref['HN'] * hn) if ref['HN']!=0 else 0
+            return v1
+
+        v1_p1, v1_p2 = get_v1_stats(MONTH_MAP[p1_name]), get_v1_stats(MONTH_MAP[p2_name])
+        v1_full = merge_periods(v1_p1, v1_p2)
+        st.markdown("<div style='text-align: right; color: #A64B35; font-weight: bold; margin-top: 20px;'>请点击上方标签页进入 STEP 3 ➡️</div>", unsafe_allow_html=True)
+
+    # ==========================
+    # 📌 TAB 3: 模块三
+    # ==========================
+    with tab3:
+        render_module_header("模块三：V1 vs Benchmark 差异分析", "📉")
+        
+        c3_1, c3_2 = st.columns(2)
+        m3_sel = c3_1.selectbox("选择对比区间 (V1 vs Bench)", m1_cols, key="m3")
+        m3_view = c3_2.radio("选择查看视角:", ["Total View", "CM View", "Owner View"], horizontal=True, key="m3_v")
+        
+        d_m3_bench = get_bench_data(df, sel_resort, sel_year, MONTH_MAP[m3_sel])
+        d_m3_v1 = v1_full if m3_sel == "Full Year" else (v1_p1 if m3_sel == p1_name else v1_p2)
+        
+        f3_b, f3_v1 = get_pl_flow(d_m3_bench, is_benchmark=True), get_pl_flow(d_m3_v1)
+        df3_b_f, df3_v1_f = filter_pl_view(f3_b, m3_view), filter_pl_view(f3_v1, m3_view)
+        
+        df_m3 = pd.DataFrame({"P&L Line Item": f3_b["P&L Line Item"], "Bench": df3_b_f.iloc[:, 1], "V1 Forecast": df3_v1_f.iloc[:, 1]})
+        df_m3["Variance"] = df_m3["V1 Forecast"] - df_m3["Bench"]
+        render_table(df_m3, variance_cols=["Variance"])
+        st.markdown("<div style='text-align: right; color: #A64B35; font-weight: bold; margin-top: 20px;'>请点击上方标签页进入 STEP 4 ➡️</div>", unsafe_allow_html=True)
+
+    # ==========================
+    # 📌 TAB 4: 模块四 (带千分位修复)
+    # ==========================
+    with tab4:
+        render_module_header(f"模块四：成本端双通道精修 (V2 Budget - {p1_name} & {p2_name})", "⚙️")
+        
+        def render_m4_adj(p_name, v1_data):
+            st.subheader(f"🛠️ {p_name} 实时精修面板")
             
-        adjs, afters = [], []
-        for i in range(5):
+            hn_v1 = v1_data['HN']
+            fb_uc = (v1_data['VC_FB']*1000)/hn_v1 if hn_v1 else 0
+            ski_uc = (v1_data['VC_Ski']*1000)/hn_v1 if hn_v1 else 0
+            
+            s_f = (v1_data['Sal_GOF']*1000)/v1_data['ETP_GOF'] if v1_data['ETP_GOF'] else 0
+            s_l = (v1_data['Sal_GOL']*1000)/v1_data['ETP_GOL'] if v1_data['ETP_GOL'] else 0
+            s_ge = (v1_data['Sal_GE']*1000)/v1_data['ETP_GE'] if v1_data['ETP_GE'] else 0
+            
+            items = ["F&B Unit (RMB/HN)", "Ski Unit (RMB/HN)", "Sal F-GO per ETP", "Sal L-GO per ETP", "Sal GE per ETP"]
+            etp_bases = ["-", "-", v1_data['ETP_GOF'], v1_data['ETP_GOL'], v1_data['ETP_GE']]
+            befores = [fb_uc, ski_uc, s_f, s_l, s_ge]
+            
             rc = st.columns([3, 2, 2, 2, 2])
-            rc[0].write(items[i])
-            rc[1].write(f"{etp_bases[i]:.1f}" if isinstance(etp_bases[i], (int, float)) else etp_bases[i])
-            rc[2].write(f"{befores[i]:.1f}")
-            adj = rc[3].number_input(" ", value=0.0, key=f"adj_{p_name}_{i}", label_visibility="collapsed")
-            after = befores[i] * (1 + adj/100)
-            rc[4].write(f"`{after:.1f}`")
-            afters.append(after)
+            for col, title in zip(rc, ["Cost Items", "Base(HN/ETP)", "Before(V1)", "Adj %", "After(V2)"]): col.markdown(f"**{title}**")
+                
+            adjs, afters = [], []
+            for i in range(5):
+                rc = st.columns([3, 2, 2, 2, 2])
+                rc[0].write(items[i])
+                
+                # 🌟 修复：加入千分位和一位小数
+                base_str = f"{etp_bases[i]:,.1f}" if isinstance(etp_bases[i], (int, float)) else etp_bases[i]
+                rc[1].write(base_str)
+                rc[2].write(f"{befores[i]:,.1f}")
+                
+                adj = rc[3].number_input(" ", value=0.0, key=f"adj_{p_name}_{i}", label_visibility="collapsed")
+                after = befores[i] * (1 + adj/100)
+                rc[4].write(f"`{after:,.1f}`")
+                afters.append(after)
+                
+            v2 = v1_data.copy()
+            v2['VC_FB'] = (afters[0] * v2['HN']) / 1000
+            v2['VC_Ski'] = (afters[1] * v2['HN']) / 1000
+            v2['Sal_GOF'] = (afters[2] * v2['ETP_GOF']) / 1000
+            v2['Sal_GOL'] = (afters[3] * v2['ETP_GOL']) / 1000
+            v2['Sal_GE'] = (afters[4] * v2['ETP_GE']) / 1000
+            return v2
             
-        v2 = v1_data.copy()
-        # V2 预算 = 精修后的单价 * V1 的 HN 或 ETP 基数
-        v2['VC_FB'] = (afters[0] * v2['HN']) / 1000
-        v2['VC_Ski'] = (afters[1] * v2['HN']) / 1000
-        v2['Sal_GOF'] = (afters[2] * v2['ETP_GOF']) / 1000
-        v2['Sal_GOL'] = (afters[3] * v2['ETP_GOL']) / 1000
-        v2['Sal_GE'] = (afters[4] * v2['ETP_GE']) / 1000
-        return v2
+        c4_1, c4_2 = st.columns(2)
+        with c4_1: v2_p1 = render_m4_adj(p1_name, v1_p1)
+        with c4_2: v2_p2 = render_m4_adj(p2_name, v1_p2)
+        v2_full = merge_periods(v2_p1, v2_p2)
         
-    c4_1, c4_2 = st.columns(2)
-    with c4_1: v2_p1 = render_m4_adj(p1_name, v1_p1)
-    with c4_2: v2_p2 = render_m4_adj(p2_name, v1_p2)
-    v2_full = merge_periods(v2_p1, v2_p2)
-    
-    st.subheader("V2 vs V1 全年 P&L 成本精修对标")
-    m4_view = st.radio("选择查看视角:", ["Total View", "CM View", "Owner View"], horizontal=True, key="m4_v")
-    
-    f4_v1, f4_v2 = get_pl_flow(v1_full, detailed=True), get_pl_flow(v2_full, detailed=True)
-    df4_v1_f, df4_v2_f = filter_pl_view(f4_v1, m4_view), filter_pl_view(f4_v2, m4_view)
-    
-    df_m4 = pd.DataFrame({"P&L Line Item": f4_v1["P&L Line Item"], "V1 Base": df4_v1_f.iloc[:, 1], "V2 Adjusted": df4_v2_f.iloc[:, 1]})
-    df_m4["Variance"] = df_m4["V2 Adjusted"] - df_m4["V1 Base"]
-    render_table(df_m4, variance_cols=["Variance"])
+        st.subheader("V2 vs V1 全年 P&L 成本精修对标")
+        m4_view = st.radio("选择查看视角:", ["Total View", "CM View", "Owner View"], horizontal=True, key="m4_v")
+        
+        f4_v1, f4_v2 = get_pl_flow(v1_full, detailed=True), get_pl_flow(v2_full, detailed=True)
+        df4_v1_f, df4_v2_f = filter_pl_view(f4_v1, m4_view), filter_pl_view(f4_v2, m4_view)
+        
+        df_m4 = pd.DataFrame({"P&L Line Item": f4_v1["P&L Line Item"], "V1 Base": df4_v1_f.iloc[:, 1], "V2 Adjusted": df4_v2_f.iloc[:, 1]})
+        df_m4["Variance"] = df_m4["V2 Adjusted"] - df_m4["V1 Base"]
+        render_table(df_m4, variance_cols=["Variance"])
+        st.markdown("<div style='text-align: right; color: #A64B35; font-weight: bold; margin-top: 20px;'>请点击上方标签页进入 STEP 5 ➡️</div>", unsafe_allow_html=True)
 
-    # --- 模块五 ---
-    st.divider()
-    st.header(f"🧪 模块五：双通道压力测试 (V3 稳定年 - {p1_name} & {p2_name})")
-    
-    def render_m5_adj(p_name, v2_data):
-        st.subheader(f"{p_name} 压测")
-        adr_b = v2_data['BV']*1000/v2_data['HN'] if v2_data['HN']!=0 else 0
-        st.write(f"Before (V2) -> ADR: **{adr_b:,.1f}** RMB | HN: **{v2_data['HN']:,.0f}**")
-        a_adr = st.slider(f"{p_name} ADR 波动 (%)", -30, 30, 0, key=f"m5a_{p_name}") / 100
-        a_hn = st.slider(f"{p_name} HN 波动 (%)", -30, 30, 0, key=f"m5h_{p_name}") / 100
+    # ==========================
+    # 📌 TAB 5: 模块五
+    # ==========================
+    with tab5:
+        render_module_header(f"模块五：双通道压力测试 (V3 稳定年 - {p1_name} & {p2_name})", "🧪")
         
-        v3 = v2_data.copy()
-        v3['HN'] *= (1+a_hn)
-        v3['BV'] *= (1+a_adr)*(1+a_hn)
-        v3['LI'] = v3['BV'] * x_ratio
-        v3['VC_FB'] *= (1+a_hn); v3['VC_Ski'] *= (1+a_hn); v3['VC_Other'] *= (1+a_hn)
-        st.write(f"After (V3) -> ADR: **{adr_b*(1+a_adr):,.1f}** RMB | HN: **{v3['HN']:,.0f}** | OCC: **{v3['HN']/v3['Capa'] if v3['Capa']!=0 else 0:.1%}**")
-        return v3
+        def render_m5_adj(p_name, v2_data):
+            st.subheader(f"{p_name} 压测")
+            adr_b = v2_data['BV']*1000/v2_data['HN'] if v2_data['HN']!=0 else 0
+            
+            # 🌟 修复：加入千分位
+            st.write(f"Before (V2) -> ADR: **{adr_b:,.1f}** RMB | HN: **{v2_data['HN']:,.0f}**")
+            a_adr = st.slider(f"{p_name} ADR 波动 (%)", -30, 30, 0, key=f"m5a_{p_name}") / 100
+            a_hn = st.slider(f"{p_name} HN 波动 (%)", -30, 30, 0, key=f"m5h_{p_name}") / 100
+            
+            v3 = v2_data.copy()
+            v3['HN'] *= (1+a_hn)
+            v3['BV'] *= (1+a_adr)*(1+a_hn)
+            v3['LI'] = v3['BV'] * x_ratio
+            v3['VC_FB'] *= (1+a_hn); v3['VC_Ski'] *= (1+a_hn); v3['VC_Other'] *= (1+a_hn)
+            st.write(f"After (V3) -> ADR: **{adr_b*(1+a_adr):,.1f}** RMB | HN: **{v3['HN']:,.0f}** | OCC: **{v3['HN']/v3['Capa'] if v3['Capa']!=0 else 0:.1%}**")
+            return v3
 
-    c5_1, c5_2 = st.columns(2)
-    with c5_1: v3_p1 = render_m5_adj(p1_name, v2_p1)
-    with c5_2: v3_p2 = render_m5_adj(p2_name, v2_p2)
-    v3_full = merge_periods(v3_p1, v3_p2)
-    
-    st.subheader("V3 (稳定年) vs V2 全年压力测试结果")
-    m5_view = st.radio("选择查看视角:", ["Total View", "CM View", "Owner View"], horizontal=True, key="m5_v")
-    
-    f5_v2, f5_v3 = get_pl_flow(v2_full, detailed=True), get_pl_flow(v3_full, detailed=True)
-    df5_v2_f, df5_v3_f = filter_pl_view(f5_v2, m5_view), filter_pl_view(f5_v3, m5_view)
-    
-    df_m5 = pd.DataFrame({"P&L Line Item": f5_v2["P&L Line Item"], "V2 Base": df5_v2_f.iloc[:, 1], "V3 Adjusted": df5_v3_f.iloc[:, 1]})
-    df_m5["Variance"] = df_m5["V3 Adjusted"] - df_m5["V2 Base"]
-    render_table(df_m5, variance_cols=["Variance"])
+        c5_1, c5_2 = st.columns(2)
+        with c5_1: v3_p1 = render_m5_adj(p1_name, v2_p1)
+        with c5_2: v3_p2 = render_m5_adj(p2_name, v2_p2)
+        v3_full = merge_periods(v3_p1, v3_p2)
+        
+        st.subheader("V3 (稳定年) vs V2 全年压力测试结果")
+        m5_view = st.radio("选择查看视角:", ["Total View", "CM View", "Owner View"], horizontal=True, key="m5_v")
+        
+        f5_v2, f5_v3 = get_pl_flow(v2_full, detailed=True), get_pl_flow(v3_full, detailed=True)
+        df5_v2_f, df5_v3_f = filter_pl_view(f5_v2, m5_view), filter_pl_view(f5_v3, m5_view)
+        
+        df_m5 = pd.DataFrame({"P&L Line Item": f5_v2["P&L Line Item"], "V2 Base": df5_v2_f.iloc[:, 1], "V3 Adjusted": df5_v3_f.iloc[:, 1]})
+        df_m5["Variance"] = df_m5["V3 Adjusted"] - df_m5["V2 Base"]
+        render_table(df_m5, variance_cols=["Variance"])
+        st.markdown("<div style='text-align: right; color: #A64B35; font-weight: bold; margin-top: 20px;'>请点击上方标签页进入 STEP 6 ➡️</div>", unsafe_allow_html=True)
 
-    # --- 模块六 ---
-    st.divider()
-    st.header("📈 模块六：10年 P&L 动态模拟沙盘")
-    st.write("设置 YoY 增长率。V3 为第 3 年基准，系统会动态推算 Capacity，确保 OCC% 测算真实可靠。")
-    
-    yoy_df = pd.DataFrame({"Year": [f"Y0{i}" if i<10 else f"Y{i}" for i in range(1, 11)], "Capa Growth %": [0.0]*10, "ADR Growth %": [-10.0, -10.0, 0.0] + [2.0]*7, "HN Growth %": [-20.0, -20.0, 0.0] + [3.0]*7, "Inflation %": [0.0]*10})
-    e_yoy = st.data_editor(yoy_df, hide_index=True)
-    
-    if st.button("🚀 生成10年完整报表与折线图"):
-        m_hn, m_adr, m_inf, m_capa = [1.0]*11, [1.0]*11, [1.0]*11, [1.0]*11
-        for i in range(4, 11):
-            m_capa[i] = m_capa[i-1] * (1 + e_yoy.loc[i-1, 'Capa Growth %']/100)
-            m_hn[i] = m_hn[i-1] * (1 + e_yoy.loc[i-1, 'HN Growth %']/100)
-            m_adr[i] = m_adr[i-1] * (1 + e_yoy.loc[i-1, 'ADR Growth %']/100)
-            m_inf[i] = m_inf[i-1] * (1 + e_yoy.loc[i-1, 'Inflation %']/100)
-            
-        m_capa[2] = 1.0 * (1 + e_yoy.loc[1, 'Capa Growth %']/100)
-        m_hn[2] = 1.0 * (1 + e_yoy.loc[1, 'HN Growth %']/100)
-        m_adr[2] = 1.0 * (1 + e_yoy.loc[1, 'ADR Growth %']/100)
+    # ==========================
+    # 📌 TAB 6: 模块六
+    # ==========================
+    with tab6:
+        render_module_header("模块六：10年 P&L 动态模拟沙盘", "📈")
+        st.write("设置 YoY 增长率。V3 为第 3 年基准，系统会动态推算 Capacity，确保 OCC% 测算真实可靠。")
         
-        m_capa[1] = m_capa[2] * (1 + e_yoy.loc[0, 'Capa Growth %']/100)
-        m_hn[1] = m_hn[2] * (1 + e_yoy.loc[0, 'HN Growth %']/100)
-        m_adr[1] = m_adr[2] * (1 + e_yoy.loc[0, 'ADR Growth %']/100)
+        yoy_df = pd.DataFrame({"Year": [f"Y0{i}" if i<10 else f"Y{i}" for i in range(1, 11)], "Capa Growth %": [0.0]*10, "ADR Growth %": [-10.0, -10.0, 0.0] + [2.0]*7, "HN Growth %": [-20.0, -20.0, 0.0] + [3.0]*7, "Inflation %": [0.0]*10})
+        e_yoy = st.data_editor(yoy_df, hide_index=True)
+        
+        if st.button("🚀 生成10年完整报表与折线图"):
+            m_hn, m_adr, m_inf, m_capa = [1.0]*11, [1.0]*11, [1.0]*11, [1.0]*11
+            for i in range(4, 11):
+                m_capa[i] = m_capa[i-1] * (1 + e_yoy.loc[i-1, 'Capa Growth %']/100)
+                m_hn[i] = m_hn[i-1] * (1 + e_yoy.loc[i-1, 'HN Growth %']/100)
+                m_adr[i] = m_adr[i-1] * (1 + e_yoy.loc[i-1, 'ADR Growth %']/100)
+                m_inf[i] = m_inf[i-1] * (1 + e_yoy.loc[i-1, 'Inflation %']/100)
+                
+            m_capa[2] = 1.0 * (1 + e_yoy.loc[1, 'Capa Growth %']/100)
+            m_hn[2] = 1.0 * (1 + e_yoy.loc[1, 'HN Growth %']/100)
+            m_adr[2] = 1.0 * (1 + e_yoy.loc[1, 'ADR Growth %']/100)
+            
+            m_capa[1] = m_capa[2] * (1 + e_yoy.loc[0, 'Capa Growth %']/100)
+            m_hn[1] = m_hn[2] * (1 + e_yoy.loc[0, 'HN Growth %']/100)
+            m_adr[1] = m_adr[2] * (1 + e_yoy.loc[0, 'ADR Growth %']/100)
 
-        pnl_total, pnl_cm, pnl_owner = {}, {}, {}
-        chart_gop, chart_margin = [], []
-        
-        for y in range(1, 11):
-            yr_str = f"Y0{y}" if y<10 else f"Y{y}"
-            d_y = v3_full.copy()
-            d_y['Capa'] *= m_capa[y]
-            d_y['HN'] *= m_hn[y]
-            d_y['BV'] = d_y['HN'] * (v3_full['BV']/v3_full['HN'] * m_adr[y]) if v3_full['HN']!=0 else 0
-            d_y['LI'] = d_y['BV'] * x_ratio
-            d_y['VC_FB'] *= m_hn[y] * m_inf[y]; d_y['VC_Ski'] *= m_hn[y] * m_inf[y]; d_y['VC_Other'] *= m_hn[y] * m_inf[y]
-            d_y['FC_Other'] *= m_inf[y]
-            d_y['Sal_GOF'] *= m_inf[y]; d_y['Sal_GOL'] *= m_inf[y]; d_y['Sal_GE'] *= m_inf[y]
+            pnl_total, pnl_cm, pnl_owner = {}, {}, {}
+            chart_gop, chart_margin = [], []
             
-            f_y = get_pl_flow(d_y, detailed=False)
-            pnl_total[yr_str], pnl_cm[yr_str], pnl_owner[yr_str] = f_y['Total'], f_y['CM Portion'], f_y['Owner Portion']
+            for y in range(1, 11):
+                yr_str = f"Y0{y}" if y<10 else f"Y{y}"
+                d_y = v3_full.copy()
+                d_y['Capa'] *= m_capa[y]
+                d_y['HN'] *= m_hn[y]
+                d_y['BV'] = d_y['HN'] * (v3_full['BV']/v3_full['HN'] * m_adr[y]) if v3_full['HN']!=0 else 0
+                d_y['LI'] = d_y['BV'] * x_ratio
+                d_y['VC_FB'] *= m_hn[y] * m_inf[y]; d_y['VC_Ski'] *= m_hn[y] * m_inf[y]; d_y['VC_Other'] *= m_hn[y] * m_inf[y]
+                d_y['FC_Other'] *= m_inf[y]
+                d_y['Sal_GOF'] *= m_inf[y]; d_y['Sal_GOL'] *= m_inf[y]; d_y['Sal_GE'] *= m_inf[y]
+                
+                f_y = get_pl_flow(d_y, detailed=False)
+                pnl_total[yr_str], pnl_cm[yr_str], pnl_owner[yr_str] = f_y['Total'], f_y['CM Portion'], f_y['Owner Portion']
+                
+                t_gop = f_y.loc[f_y["P&L Line Item"] == "GOP Total", "Total"].values[0]
+                c_gop = f_y.loc[f_y["P&L Line Item"] == "GOP Total", "CM Portion"].values[0]
+                o_gop = f_y.loc[f_y["P&L Line Item"] == "GOP Total", "Owner Portion"].values[0]
+                o_margin = f_y.loc[f_y["P&L Line Item"] == "GOP Margin %", "Owner Portion"].values[0]
+                
+                chart_gop.append({"Year": yr_str, "Total GOP": t_gop, "CM GOP": c_gop, "Owner GOP": o_gop})
+                chart_margin.append({"Year": yr_str, "Owner GOP Margin %": o_margin * 100})
             
-            t_gop = f_y.loc[f_y["P&L Line Item"] == "GOP Total", "Total"].values[0]
-            c_gop = f_y.loc[f_y["P&L Line Item"] == "GOP Total", "CM Portion"].values[0]
-            o_gop = f_y.loc[f_y["P&L Line Item"] == "GOP Total", "Owner Portion"].values[0]
-            o_margin = f_y.loc[f_y["P&L Line Item"] == "GOP Margin %", "Owner Portion"].values[0]
+            plt.style.use('default')
+            fig1, ax1 = plt.subplots(figsize=(9, 4.5))
+            df_gop = pd.DataFrame(chart_gop).set_index("Year")
+            df_gop.plot(ax=ax1, marker='o', linewidth=2.5, markersize=8, color=['#00204A', '#F2A900', '#00A3E0'])
+            ax1.set_title("10-Year GOP Trend (kRMB)", fontweight='bold', fontsize=14, color='#00204A', pad=15)
+            ax1.grid(True, linestyle=':', alpha=0.7)
+            ax1.spines['top'].set_visible(False)
+            ax1.spines['right'].set_visible(False)
+            ax1.legend(frameon=False, fontsize=10)
+            img1 = io.BytesIO(); fig1.savefig(img1, format='png', bbox_inches='tight', dpi=150); img1.seek(0)
             
-            chart_gop.append({"Year": yr_str, "Total GOP": t_gop, "CM GOP": c_gop, "Owner GOP": o_gop})
-            chart_margin.append({"Year": yr_str, "Owner GOP Margin %": o_margin * 100})
-        
-        plt.style.use('default')
-        fig1, ax1 = plt.subplots(figsize=(9, 4.5))
-        df_gop = pd.DataFrame(chart_gop).set_index("Year")
-        df_gop.plot(ax=ax1, marker='o', linewidth=2.5, markersize=8, color=['#00204A', '#F2A900', '#00A3E0'])
-        ax1.set_title("10-Year GOP Trend (kRMB)", fontweight='bold', fontsize=14, color='#00204A', pad=15)
-        ax1.grid(True, linestyle=':', alpha=0.7)
-        ax1.spines['top'].set_visible(False)
-        ax1.spines['right'].set_visible(False)
-        ax1.legend(frameon=False, fontsize=10)
-        img1 = io.BytesIO(); fig1.savefig(img1, format='png', bbox_inches='tight', dpi=150); img1.seek(0)
-        
-        fig2, ax2 = plt.subplots(figsize=(9, 4.5))
-        df_margin = pd.DataFrame(chart_margin).set_index("Year")
-        df_margin.plot(ax=ax2, marker='o', linewidth=2.5, markersize=8, color=['#FF6361'])
-        ax2.set_title("10-Year Owner Margin % Trend", fontweight='bold', fontsize=14, color='#00204A', pad=15)
-        ax2.grid(True, linestyle=':', alpha=0.7)
-        ax2.spines['top'].set_visible(False)
-        ax2.spines['right'].set_visible(False)
-        ax2.legend(frameon=False, fontsize=10)
-        img2 = io.BytesIO(); fig2.savefig(img2, format='png', bbox_inches='tight', dpi=150); img2.seek(0)
+            fig2, ax2 = plt.subplots(figsize=(9, 4.5))
+            df_margin = pd.DataFrame(chart_margin).set_index("Year")
+            df_margin.plot(ax=ax2, marker='o', linewidth=2.5, markersize=8, color=['#FF6361'])
+            ax2.set_title("10-Year Owner Margin % Trend", fontweight='bold', fontsize=14, color='#00204A', pad=15)
+            ax2.grid(True, linestyle=':', alpha=0.7)
+            ax2.spines['top'].set_visible(False)
+            ax2.spines['right'].set_visible(False)
+            ax2.legend(frameon=False, fontsize=10)
+            img2 = io.BytesIO(); fig2.savefig(img2, format='png', bbox_inches='tight', dpi=150); img2.seek(0)
 
-        st.subheader("📈 10年收益趋势图")
-        col_c1, col_c2 = st.columns(2)
-        with col_c1: st.pyplot(fig1)
-        with col_c2: st.pyplot(fig2)
+            st.subheader("📈 10年收益趋势图")
+            col_c1, col_c2 = st.columns(2)
+            with col_c1: st.pyplot(fig1)
+            with col_c2: st.pyplot(fig2)
 
-        def build_10y_df(p_dict):
-            df_out = pd.DataFrame(p_dict)
-            df_out.insert(0, "P&L Line Item", get_pl_flow(v3_full, detailed=False)['P&L Line Item'])
-            return df_out
+            def build_10y_df(p_dict):
+                df_out = pd.DataFrame(p_dict)
+                df_out.insert(0, "P&L Line Item", get_pl_flow(v3_full, detailed=False)['P&L Line Item'])
+                return df_out
 
-        df_tot, df_cm, df_own = build_10y_df(pnl_total), build_10y_df(pnl_cm), build_10y_df(pnl_owner)
-        
-        t1, t2, t3 = st.tabs(["Total P&L", "CM Portion P&L", "Owner Portion P&L"])
-        with t1: render_table(df_tot, variance_cols=[])
-        with t2: render_table(df_cm, variance_cols=[])
-        with t3: render_table(df_own, variance_cols=[])
-        
-        towrite = io.BytesIO()
-        with pd.ExcelWriter(towrite, engine='openpyxl') as writer:
-            df_tot.to_excel(writer, sheet_name="Total_PNL", index=False)
-            df_cm.to_excel(writer, sheet_name="CM_PNL", index=False)
-            df_own.to_excel(writer, sheet_name="Owner_PNL", index=False)
+            df_tot, df_cm, df_own = build_10y_df(pnl_total), build_10y_df(pnl_cm), build_10y_df(pnl_owner)
             
-            for sheet_name in ["Total_PNL", "CM_PNL", "Owner_PNL"]: style_excel_sheet(writer.sheets[sheet_name], df_tot)
+            t1, t2, t3 = st.tabs(["Total P&L", "CM Portion P&L", "Owner Portion P&L"])
+            with t1: render_table(df_tot, variance_cols=[])
+            with t2: render_table(df_cm, variance_cols=[])
+            with t3: render_table(df_own, variance_cols=[])
             
-            worksheet = writer.book.create_sheet('Charts_Overview')
-            worksheet.add_image(OpenpyxlImage(img1), 'B2')
-            worksheet.add_image(OpenpyxlImage(img2), 'B26')
-            
-        towrite.seek(0)
-        st.download_button(label="📥 下载10年期 P&L (Excel)", data=towrite, file_name="B_Case_10_Year_PNL.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            towrite = io.BytesIO()
+            with pd.ExcelWriter(towrite, engine='openpyxl') as writer:
+                df_tot.to_excel(writer, sheet_name="Total_PNL", index=False)
+                df_cm.to_excel(writer, sheet_name="CM_PNL", index=False)
+                df_own.to_excel(writer, sheet_name="Owner_PNL", index=False)
+                
+                for sheet_name in ["Total_PNL", "CM_PNL", "Owner_PNL"]: style_excel_sheet(writer.sheets[sheet_name], df_tot)
+                
+                worksheet = writer.book.create_sheet('Charts_Overview')
+                worksheet.add_image(OpenpyxlImage(img1), 'B2')
+                worksheet.add_image(OpenpyxlImage(img2), 'B26')
+                
+            towrite.seek(0)
+            st.download_button(label="📥 下载10年期 P&L (Excel)", data=towrite, file_name="B_Case_10_Year_PNL.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 else:
     # 🌟 奢华欢迎横幅 (Hero Banner)
