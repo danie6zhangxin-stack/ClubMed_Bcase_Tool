@@ -78,11 +78,6 @@ MONTH_MAP = {
 
 # --- 2. 增强型解析引擎 ---
 def get_bench_data(df, resort, year, months_list):
-    df['Resort'] = df['Resort'].astype(str).str.strip()
-    df['Year'] = df['Year'].astype(str).str.strip()
-    df['Month'] = df['Month'].astype(str).str.strip()
-    df['Line_Item'] = df['Line_Item'].astype(str).str.strip()
-
     sub = df[(df['Resort'] == resort) & (df['Year'] == str(year)) & (df['Month'].isin(months_list))]
     
     def fetch_val(line_item_name):
@@ -269,6 +264,18 @@ def style_excel_sheet(ws, df):
 # --- Streamlit UI ---
 st.set_page_config(layout="wide", page_title="B-Case Decision Engine Pro V39")
 
+# --- CSS 全局覆盖 (与迎宾页面字体对齐) ---
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@300;400;500;600&display=swap');
+    
+    h1, h2, h3 { font-family: 'Playfair Display', serif !important; color: #1D263B; }
+    .stDataFrame { border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.03); }
+    .stSidebar { background-color: #F8F9FA !important; border-right: 1px solid #EAECEF; }
+</style>
+""", unsafe_allow_html=True)
+
+
 # --- 权限控制 ---
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -291,8 +298,15 @@ if uploaded_file:
     df = pd.read_csv(uploaded_file)
     df.columns = [c.strip() for c in df.columns]
     
-    # 🌟 级联筛选器：选完度假村后，只显示有数据的对应年份
-    df['Resort'] = df['Resort'].astype(str).str.strip()
+    # 🌟 核心修补：全局极致清洗，彻底消除任何会导致匹配为空的字符/空格后缀！
+    for col in ['Resort', 'Year', 'Month', 'Line_Item']:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+            if col == 'Year':
+                # 剔除可能在解析时产生的 .0 浮点后缀
+                df[col] = df[col].apply(lambda x: x[:-2] if x.endswith('.0') else x)
+    
+    # 🌟 级联筛选器
     resorts = sorted(df['Resort'].unique())
     sel_resort = st.sidebar.selectbox("选择度假村", resorts)
     
@@ -323,7 +337,6 @@ if uploaded_file:
     st.header("📥 模块二：业务录入 (V1 Forecast)")
     x_ratio = st.number_input("参数 X (Local Income 占 BV TTC 的比例 %)", value=10.0) / 100
     
-    # 提取 Full Year 的 Capacity 作为默认值
     d_ref_full = get_bench_data(df, sel_resort, sel_year, MONTH_MAP["Full Year"])
     capa_default = d_ref_full['Capa'] / 12 if d_ref_full['Capa'] else 23000.0
     
@@ -366,25 +379,25 @@ if uploaded_file:
     st.divider()
     st.header(f"⚙️ 模块四：成本端双通道精修 (V2 Budget - {p1_name} & {p2_name})")
     
-    def render_m4_adj(p_name, v1_data, bench_data):
+    def render_m4_adj(p_name, v1_data):
         st.subheader(f"🛠️ {p_name} 实时精修面板")
         
-        # 🌟 修复回调：直接使用 bench_data 进行基础单价计算！保证薪资和成本被正确提取并除以 Benchmark ETP。
-        hn_b = bench_data['HN']
+        # 🌟 修正回调：完全基于 v1_data (即你模块二刚刚计算出的 V1 基数) 计算当前的单价和人效
+        hn_v1 = v1_data['HN']
         
-        fb_uc = (bench_data['VC_FB']*1000)/hn_b if hn_b else 0
-        ski_uc = (bench_data['VC_Ski']*1000)/hn_b if hn_b else 0
+        fb_uc = (v1_data['VC_FB']*1000)/hn_v1 if hn_v1 else 0
+        ski_uc = (v1_data['VC_Ski']*1000)/hn_v1 if hn_v1 else 0
         
-        s_f = (bench_data['Sal_GOF']*1000)/bench_data['ETP_GOF'] if bench_data['ETP_GOF'] else 0
-        s_l = (bench_data['Sal_GOL']*1000)/bench_data['ETP_GOL'] if bench_data['ETP_GOL'] else 0
-        s_ge = (bench_data['Sal_GE']*1000)/bench_data['ETP_GE'] if bench_data['ETP_GE'] else 0
+        s_f = (v1_data['Sal_GOF']*1000)/v1_data['ETP_GOF'] if v1_data['ETP_GOF'] else 0
+        s_l = (v1_data['Sal_GOL']*1000)/v1_data['ETP_GOL'] if v1_data['ETP_GOL'] else 0
+        s_ge = (v1_data['Sal_GE']*1000)/v1_data['ETP_GE'] if v1_data['ETP_GE'] else 0
         
         items = ["F&B Unit (RMB/HN)", "Ski Unit (RMB/HN)", "Sal F-GO per ETP", "Sal L-GO per ETP", "Sal GE per ETP"]
-        etp_bases = ["-", "-", bench_data['ETP_GOF'], bench_data['ETP_GOL'], bench_data['ETP_GE']]
+        etp_bases = ["-", "-", v1_data['ETP_GOF'], v1_data['ETP_GOL'], v1_data['ETP_GE']]
         befores = [fb_uc, ski_uc, s_f, s_l, s_ge]
         
         rc = st.columns([3, 2, 2, 2, 2])
-        for col, title in zip(rc, ["Cost Items", "ETP Base", "Before(V1)", "Adj %", "After(V2)"]): col.markdown(f"**{title}**")
+        for col, title in zip(rc, ["Cost Items", "Base(HN/ETP)", "Before(V1)", "Adj %", "After(V2)"]): col.markdown(f"**{title}**")
             
         adjs, afters = [], []
         for i in range(5):
@@ -398,18 +411,17 @@ if uploaded_file:
             afters.append(after)
             
         v2 = v1_data.copy()
+        # V2 预算 = 精修后的单价 * V1 的 HN 或 ETP 基数
         v2['VC_FB'] = (afters[0] * v2['HN']) / 1000
         v2['VC_Ski'] = (afters[1] * v2['HN']) / 1000
-        
-        # 将调整后的单位成本，乘回原始的 Benchmark ETP 来得到 V2 预算
-        v2['Sal_GOF'] = (afters[2] * bench_data['ETP_GOF']) / 1000
-        v2['Sal_GOL'] = (afters[3] * bench_data['ETP_GOL']) / 1000
-        v2['Sal_GE'] = (afters[4] * bench_data['ETP_GE']) / 1000
+        v2['Sal_GOF'] = (afters[2] * v2['ETP_GOF']) / 1000
+        v2['Sal_GOL'] = (afters[3] * v2['ETP_GOL']) / 1000
+        v2['Sal_GE'] = (afters[4] * v2['ETP_GE']) / 1000
         return v2
         
     c4_1, c4_2 = st.columns(2)
-    with c4_1: v2_p1 = render_m4_adj(p1_name, v1_p1, get_bench_data(df, sel_resort, sel_year, MONTH_MAP[p1_name]))
-    with c4_2: v2_p2 = render_m4_adj(p2_name, v1_p2, get_bench_data(df, sel_resort, sel_year, MONTH_MAP[p2_name]))
+    with c4_1: v2_p1 = render_m4_adj(p1_name, v1_p1)
+    with c4_2: v2_p2 = render_m4_adj(p2_name, v1_p2)
     v2_full = merge_periods(v2_p1, v2_p2)
     
     st.subheader("V2 vs V1 全年 P&L 成本精修对标")
