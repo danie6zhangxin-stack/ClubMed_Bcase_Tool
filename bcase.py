@@ -83,7 +83,7 @@ def get_bench_data(df, resort, year, months_list):
     df['Month'] = df['Month'].astype(str).str.strip()
     df['Line_Item'] = df['Line_Item'].astype(str).str.strip()
 
-    sub = df[(df['Resort'] == resort) & (df['Year'] == year) & (df['Month'].isin(months_list))]
+    sub = df[(df['Resort'] == resort) & (df['Year'] == str(year)) & (df['Month'].isin(months_list))]
     
     def fetch_val(line_item_name):
         match = sub[sub['Line_Item'] == line_item_name]
@@ -269,6 +269,18 @@ def style_excel_sheet(ws, df):
 # --- Streamlit UI ---
 st.set_page_config(layout="wide", page_title="B-Case Decision Engine Pro V39")
 
+# --- CSS 全局覆盖 (与迎宾页面字体对齐) ---
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@300;400;500;600&display=swap');
+    
+    h1, h2, h3 { font-family: 'Playfair Display', serif !important; color: #1D263B; }
+    .stDataFrame { border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.03); }
+    .stSidebar { background-color: #F8F9FA !important; border-right: 1px solid #EAECEF; }
+</style>
+""", unsafe_allow_html=True)
+
+
 # --- 权限控制 ---
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -290,9 +302,15 @@ uploaded_file = st.sidebar.file_uploader("上传 RAW DATA.csv", type="csv")
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
     df.columns = [c.strip() for c in df.columns]
-    resorts = df['Resort'].unique()
+    
+    # 🌟 级联筛选器
+    df['Resort'] = df['Resort'].astype(str).str.strip()
+    resorts = sorted(df['Resort'].unique())
     sel_resort = st.sidebar.selectbox("选择度假村", resorts)
-    sel_year = st.sidebar.selectbox("选择年度", df['Year'].unique())
+    
+    available_years = df[df['Resort'] == sel_resort]['Year'].astype(str).unique()
+    available_years = sorted(available_years, reverse=True)
+    sel_year = st.sidebar.selectbox("选择年度", available_years)
 
     # --- 模块一 ---
     st.header(f"📊 模块一：{sel_resort} {sel_year} 基准看板")
@@ -317,7 +335,6 @@ if uploaded_file:
     st.header("📥 模块二：业务录入 (V1 Forecast)")
     x_ratio = st.number_input("参数 X (Local Income 占 BV TTC 的比例 %)", value=10.0) / 100
     
-    # 提取 Full Year 的 Capacity 作为默认值
     d_ref_full = get_bench_data(df, sel_resort, sel_year, MONTH_MAP["Full Year"])
     capa_default = d_ref_full['Capa'] / 12 if d_ref_full['Capa'] else 23000.0
     
@@ -367,7 +384,6 @@ if uploaded_file:
         fb_uc = (bench_data['VC_FB']*1000)/hn_b if hn_b else 0
         ski_uc = (bench_data['VC_Ski']*1000)/hn_b if hn_b else 0
         
-        # 修复逻辑：直接除以 ETP，不除以月份数
         s_f = (bench_data['Sal_GOF']*1000)/bench_data['ETP_GOF'] if bench_data['ETP_GOF'] else 0
         s_l = (bench_data['Sal_GOL']*1000)/bench_data['ETP_GOL'] if bench_data['ETP_GOL'] else 0
         s_ge = (bench_data['Sal_GE']*1000)/bench_data['ETP_GE'] if bench_data['ETP_GE'] else 0
@@ -393,8 +409,6 @@ if uploaded_file:
         v2 = v1_data.copy()
         v2['VC_FB'] = (afters[0] * v2['HN']) / 1000
         v2['VC_Ski'] = (afters[1] * v2['HN']) / 1000
-        
-        # 修复逻辑：直接乘以 ETP
         v2['Sal_GOF'] = (afters[2] * bench_data['ETP_GOF']) / 1000
         v2['Sal_GOL'] = (afters[3] * bench_data['ETP_GOL']) / 1000
         v2['Sal_GE'] = (afters[4] * bench_data['ETP_GE']) / 1000
@@ -479,7 +493,7 @@ if uploaded_file:
         for y in range(1, 11):
             yr_str = f"Y0{y}" if y<10 else f"Y{y}"
             d_y = v3_full.copy()
-            d_y['Capa'] *= m_capa[y]  # 动态容量
+            d_y['Capa'] *= m_capa[y]
             d_y['HN'] *= m_hn[y]
             d_y['BV'] = d_y['HN'] * (v3_full['BV']/v3_full['HN'] * m_adr[y]) if v3_full['HN']!=0 else 0
             d_y['LI'] = d_y['BV'] * x_ratio
@@ -552,4 +566,48 @@ if uploaded_file:
         st.download_button(label="📥 下载10年期 P&L (Excel)", data=towrite, file_name="B_Case_10_Year_PNL.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 else:
-    st.warning("请上传 RAW DATA.csv 开始分析")
+    # 🌟 奢华欢迎横幅 (Hero Banner)
+    welcome_html = """
+    <div style="padding: 5rem 2rem; text-align: center; background: linear-gradient(135deg, #1D263B 0%, #2A3650 100%); border-radius: 16px; margin-top: 1rem; box-shadow: 0 20px 40px rgba(0,0,0,0.15);">
+        <div style="font-size: 4.5rem; margin-bottom: 0.5rem; color: #A64B35; font-family: serif;">Ψ</div>
+        <h1 style="font-family: 'Playfair Display', serif; font-size: 3.5rem; color: #FFFFFF; margin-bottom: 1rem; letter-spacing: 1px;">Financial Decision Engine</h1>
+        <p style="font-family: 'Inter', sans-serif; font-size: 1.15rem; color: #A4B6B0; max-width: 650px; margin: 0 auto; line-height: 1.6; font-weight: 300;">
+            Elevate your financial modeling. Please upload your RAW DATA via the sidebar to unlock 10-year P&L simulations, real-time cost adjustments, and executive-level margin analysis.
+        </p>
+    </div>
+    """
+    st.markdown(welcome_html, unsafe_allow_html=True)
+
+    st.markdown("<br><br>", unsafe_allow_html=True)
+
+    # 🌟 核心功能特性展示卡片 (Feature Cards)
+    c1, c2, c3 = st.columns(3)
+    
+    card_style = "padding: 2rem 1.5rem; background-color: #FFFFFF; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.04); border-top: 4px solid #A64B35; height: 100%; text-align: center;"
+    
+    with c1:
+        st.markdown(f'''
+        <div style="{card_style}">
+            <div style="font-size: 2.5rem; margin-bottom: 1rem;">📊</div>
+            <h3 style="font-family: 'Playfair Display', serif; color: #1D263B; font-size: 1.4rem; margin-bottom: 0.5rem;">P&L Benchmarking</h3>
+            <p style="color: #6c757d; font-size: 0.95rem; line-height: 1.5;">Instantly compare operational KPIs and P&L flows across seasons and semesters with boardroom-ready precision.</p>
+        </div>
+        ''', unsafe_allow_html=True)
+        
+    with c2:
+        st.markdown(f'''
+        <div style="{card_style}">
+            <div style="font-size: 2.5rem; margin-bottom: 1rem;">⚙️</div>
+            <h3 style="font-family: 'Playfair Display', serif; color: #1D263B; font-size: 1.4rem; margin-bottom: 0.5rem;">Dynamic Scenarios</h3>
+            <p style="color: #6c757d; font-size: 0.95rem; line-height: 1.5;">Simulate V1 Forecasts, fine-tune V2 Budgets, and execute V3 Stress Tests in real-time.</p>
+        </div>
+        ''', unsafe_allow_html=True)
+        
+    with c3:
+        st.markdown(f'''
+        <div style="{card_style}">
+            <div style="font-size: 2.5rem; margin-bottom: 1rem;">📈</div>
+            <h3 style="font-family: 'Playfair Display', serif; color: #1D263B; font-size: 1.4rem; margin-bottom: 0.5rem;">10-Year Projection</h3>
+            <p style="color: #6c757d; font-size: 0.95rem; line-height: 1.5;">Extrapolate long-term GOP trends and margins with customizable YoY growth rates and inflation modeling.</p>
+        </div>
+        ''', unsafe_allow_html=True)
