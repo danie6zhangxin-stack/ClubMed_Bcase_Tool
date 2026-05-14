@@ -34,11 +34,11 @@ def render_table(df_raw, item_col="P&L Line Item", variance_cols=["Variance"]):
         is_sub_row = row_name_raw.startswith("  -")
         
         for col in df_disp.columns:
-            # 🌟 Updated: Base styling with center alignment
+            # Center alignment for data cells
             cell_style = 'background-color: #F8F9FA !important; color: #00204A !important; text-align: center !important;'
             
             if col == item_col:
-                cell_style += ' font-weight: bold; text-align: left !important;' # Keep items left-aligned for readability
+                cell_style += ' font-weight: bold; text-align: left !important;'
                 if is_bold_row: 
                     cell_style = 'background-color: #E6F2FF !important; color: #00204A !important; font-weight: 900; border-top: 2px solid #00204A; text-align: left !important;'
                 elif is_sub_row:
@@ -63,7 +63,7 @@ def render_table(df_raw, item_col="P&L Line Item", variance_cols=["Variance"]):
 
     styled_df = df_disp.style.apply(style_cells, axis=1)
     
-    # 🌟 Updated: Center-aligned headers and increased font size (18px)
+    # Header styling: Centered, 18px font size
     header_style = [
         {'selector': 'th', 'props': [
             ('background-color', '#00204A !important'), 
@@ -458,6 +458,7 @@ if uploaded_file:
         df_m4 = pd.DataFrame({"P&L Line Item": f4_v1["P&L Line Item"], "V1 Base": df4_v1_f.iloc[:, 1], "V2 Adjusted": df4_v2_f.iloc[:, 1]})
         df_m4["Variance"] = df_m4["V2 Adjusted"] - df_m4["V1 Base"]
         render_table(df_m4, variance_cols=["Variance"])
+        st.markdown("<div style='text-align: right; color: #A64B35; font-weight: bold;'>Click Step 5 Above ➡️</div>", unsafe_allow_html=True)
 
     # --- STEP 5: Stress Test ---
     with tab5:
@@ -485,51 +486,115 @@ if uploaded_file:
         df_m5 = pd.DataFrame({"P&L Line Item": f5_v2["P&L Line Item"], "V2 Base": df5_v2_f.iloc[:, 1], "V3 Adjusted": df5_v3_f.iloc[:, 1]})
         df_m5["Variance"] = df_m5["V3 Adjusted"] - df_m5["V2 Base"]
         render_table(df_m5, variance_cols=["Variance"])
+        st.markdown("<div style='text-align: right; color: #A64B35; font-weight: bold;'>Click Step 6 Above ➡️</div>", unsafe_allow_html=True)
 
     # --- STEP 6: 10-Year Sandbox ---
     with tab6:
         render_module_header("Module 6: 10-Year P&L Dynamic Simulation", "📈")
-        st.write("Set YoY Growth Rates based on V3基准.")
+        st.write("Set YoY Growth Rates. V3 acts as the base for Year 3. Capacity dynamically adjusts to ensure realistic OCC%.")
+        
         yoy_df = pd.DataFrame({"Year": [f"Y{i:02}" for i in range(1, 11)], "Capa Growth %": [0.0]*10, "ADR Growth %": [-10.0, -10.0, 0.0] + [2.0]*7, "HN Growth %": [-20.0, -20.0, 0.0] + [3.0]*7, "Inflation %": [0.0]*10})
         e_yoy = st.data_editor(yoy_df, hide_index=True)
+        
         if st.button("🚀 Generate 10-Year Full Projection & Charts"):
             m_hn, m_adr, m_inf, m_capa = [1.0]*11, [1.0]*11, [1.0]*11, [1.0]*11
-            for i in range(1, 11):
-                m_capa[i] = m_capa[i-1] * (1 + e_yoy.loc[i-1, 'Capa Growth %']/100) if i>1 else 1.0
-                m_hn[i] = m_hn[i-1] * (1 + e_yoy.loc[i-1, 'HN Growth %']/100) if i>1 else 1.0
-                m_adr[i] = m_adr[i-1] * (1 + e_yoy.loc[i-1, 'ADR Growth %']/100) if i>1 else 1.0
-                m_inf[i] = m_inf[i-1] * (1 + e_yoy.loc[i-1, 'Inflation %']/100) if i>1 else 1.0
+            for i in range(4, 11):
+                m_capa[i] = m_capa[i-1] * (1 + e_yoy.loc[i-1, 'Capa Growth %']/100)
+                m_hn[i] = m_hn[i-1] * (1 + e_yoy.loc[i-1, 'HN Growth %']/100)
+                m_adr[i] = m_adr[i-1] * (1 + e_yoy.loc[i-1, 'ADR Growth %']/100)
+                m_inf[i] = m_inf[i-1] * (1 + e_yoy.loc[i-1, 'Inflation %']/100)
+                
+            m_capa[2] = 1.0 * (1 + e_yoy.loc[1, 'Capa Growth %']/100)
+            m_hn[2] = 1.0 * (1 + e_yoy.loc[1, 'HN Growth %']/100)
+            m_adr[2] = 1.0 * (1 + e_yoy.loc[1, 'ADR Growth %']/100)
+            
+            m_capa[1] = m_capa[2] * (1 + e_yoy.loc[0, 'Capa Growth %']/100)
+            m_hn[1] = m_hn[2] * (1 + e_yoy.loc[0, 'HN Growth %']/100)
+            m_adr[1] = m_adr[2] * (1 + e_yoy.loc[0, 'ADR Growth %']/100)
+
             pnl_total, pnl_cm, pnl_owner = {}, {}, {}
             chart_gop, chart_margin = [], []
+            
             for y in range(1, 11):
                 yr_str = f"Y{y:02}"
                 d_y = v3_full.copy()
-                d_y['Capa'] *= m_capa[y]; d_y['HN'] *= m_hn[y]
+                d_y['Capa'] *= m_capa[y]
+                d_y['HN'] *= m_hn[y]
                 d_y['BV'] = d_y['HN'] * (v3_full['BV']/v3_full['HN'] * m_adr[y]) if v3_full['HN']!=0 else 0
                 d_y['LI'] = d_y['BV'] * x_ratio
                 d_y['VC_FB'] *= m_hn[y] * m_inf[y]; d_y['VC_Ski'] *= m_hn[y] * m_inf[y]; d_y['VC_Other'] *= m_hn[y] * m_inf[y]
-                d_y['FC_Other'] *= m_inf[y]; d_y['Sal_GOF'] *= m_inf[y]; d_y['Sal_GOL'] *= m_inf[y]; d_y['Sal_GE'] *= m_inf[y]
+                d_y['FC_Other'] *= m_inf[y]
+                d_y['Sal_GOF'] *= m_inf[y]; d_y['Sal_GOL'] *= m_inf[y]; d_y['Sal_GE'] *= m_inf[y]
+                
                 f_y = get_pl_flow(d_y, detailed=False)
                 pnl_total[yr_str], pnl_cm[yr_str], pnl_owner[yr_str] = f_y['Total'], f_y['CM Portion'], f_y['Owner Portion']
+                
                 t_gop = f_y.loc[f_y["P&L Line Item"] == "GOP Total", "Total"].values[0]
+                c_gop = f_y.loc[f_y["P&L Line Item"] == "GOP Total", "CM Portion"].values[0]
+                o_gop = f_y.loc[f_y["P&L Line Item"] == "GOP Total", "Owner Portion"].values[0]
                 o_margin = f_y.loc[f_y["P&L Line Item"] == "GOP Margin %", "Owner Portion"].values[0]
-                chart_gop.append({"Year": yr_str, "Total GOP": t_gop})
-                chart_margin.append({"Year": yr_str, "Owner Margin %": o_margin * 100})
+                
+                chart_gop.append({"Year": yr_str, "Total GOP": t_gop, "CM GOP": c_gop, "Owner GOP": o_gop})
+                chart_margin.append({"Year": yr_str, "Owner GOP Margin %": o_margin * 100})
             
-            st.subheader("10-Year Profitability Trends")
-            col_c1, col_c2 = st.columns(2)
-            with col_c1: 
-                fig1, ax1 = plt.subplots(figsize=(10, 5))
-                pd.DataFrame(chart_gop).set_index("Year").plot(ax=ax1, marker='o', color='#00204A')
-                ax1.set_title("10-Year GOP Trend (kRMB)"); st.pyplot(fig1)
-            with col_c2:
-                fig2, ax2 = plt.subplots(figsize=(10, 5))
-                pd.DataFrame(chart_margin).set_index("Year").plot(ax=ax2, marker='s', color='#A64B35')
-                ax2.set_title("10-Year Owner Margin % Trend"); st.pyplot(fig2)
+            plt.style.use('default')
+            
+            # --- Chart 1: GOP Trend ---
+            fig1, ax1 = plt.subplots(figsize=(9, 4.5))
+            df_gop = pd.DataFrame(chart_gop).set_index("Year")
+            df_gop.plot(ax=ax1, marker='o', linewidth=2.5, markersize=8, color=['#00204A', '#F2A900', '#00A3E0'])
+            ax1.set_title("10-Year GOP Trend (kRMB)", fontweight='bold', fontsize=14, color='#00204A', pad=15)
+            ax1.grid(True, linestyle=':', alpha=0.7)
+            ax1.spines['top'].set_visible(False)
+            ax1.spines['right'].set_visible(False)
+            ax1.legend(frameon=False, fontsize=10)
+            img1 = io.BytesIO(); fig1.savefig(img1, format='png', bbox_inches='tight', dpi=150); img1.seek(0)
+            
+            # --- Chart 2: Margin Trend ---
+            fig2, ax2 = plt.subplots(figsize=(9, 4.5))
+            df_margin = pd.DataFrame(chart_margin).set_index("Year")
+            df_margin.plot(ax=ax2, marker='o', linewidth=2.5, markersize=8, color=['#FF6361'])
+            ax2.set_title("10-Year Owner Margin % Trend", fontweight='bold', fontsize=14, color='#00204A', pad=15)
+            ax2.grid(True, linestyle=':', alpha=0.7)
+            ax2.spines['top'].set_visible(False)
+            ax2.spines['right'].set_visible(False)
+            ax2.legend(frameon=False, fontsize=10)
+            img2 = io.BytesIO(); fig2.savefig(img2, format='png', bbox_inches='tight', dpi=150); img2.seek(0)
 
-            df_tot = pd.DataFrame(pnl_total); df_tot.insert(0, "P&L Line Item", f_y['P&L Line Item'])
-            st.tabs(["Full 10-Year P&L"])[0].table(df_tot)
+            st.subheader("📈 10-Year Profitability Trends")
+            col_c1, col_c2 = st.columns(2)
+            with col_c1: st.pyplot(fig1)
+            with col_c2: st.pyplot(fig2)
+
+            # --- Full P&L Tabs ---
+            def build_10y_df(p_dict):
+                df_out = pd.DataFrame(p_dict)
+                df_out.insert(0, "P&L Line Item", get_pl_flow(v3_full, detailed=False)['P&L Line Item'])
+                return df_out
+
+            df_tot, df_cm, df_own = build_10y_df(pnl_total), build_10y_df(pnl_cm), build_10y_df(pnl_owner)
             
+            t1, t2, t3 = st.tabs(["Total P&L", "CM Portion P&L", "Owner Portion P&L"])
+            with t1: render_table(df_tot, variance_cols=[])
+            with t2: render_table(df_cm, variance_cols=[])
+            with t3: render_table(df_own, variance_cols=[])
+            
+            # --- Excel Downloader ---
+            towrite = io.BytesIO()
+            with pd.ExcelWriter(towrite, engine='openpyxl') as writer:
+                df_tot.to_excel(writer, sheet_name="Total_PNL", index=False)
+                df_cm.to_excel(writer, sheet_name="CM_PNL", index=False)
+                df_own.to_excel(writer, sheet_name="Owner_PNL", index=False)
+                
+                for sheet_name in ["Total_PNL", "CM_PNL", "Owner_PNL"]: style_excel_sheet(writer.sheets[sheet_name], df_tot)
+                
+                worksheet = writer.book.create_sheet('Charts_Overview')
+                worksheet.add_image(OpenpyxlImage(img1), 'B2')
+                worksheet.add_image(OpenpyxlImage(img2), 'B26')
+                
+            towrite.seek(0)
+            st.download_button(label="📥 Download 10-Year P&L (Excel)", data=towrite, file_name="B_Case_10_Year_PNL.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
 else:
     # 🌟 Welcome Hero Banner
     welcome_html = """
@@ -545,7 +610,7 @@ else:
 
     st.markdown("<br><br>", unsafe_allow_html=True)
 
-    # 🌟 Feature Cards (高级功能展示卡片 - 全英文版)
+    # 🌟 Feature Cards
     c1, c2, c3 = st.columns(3)
     
     card_style = "padding: 2rem 1.5rem; background-color: #FFFFFF; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.04); border-top: 4px solid #A64B35; height: 100%; text-align: center;"
