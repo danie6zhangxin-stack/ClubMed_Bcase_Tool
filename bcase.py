@@ -1,4 +1,4 @@
-import streamlit as st # 必须先导入 streamlit，后面才能用 st.xxx
+import streamlit as st
 import pandas as pd
 import numpy as np
 import io
@@ -188,7 +188,7 @@ def get_pl_flow(d, detailed=False, is_benchmark=False):
     rows = [
         ["ADR (RMB)", adr, np.nan, adr],
         ["HN sold", hn, np.nan, hn],
-        ["OCC %", occ, np.nan, occ],  # 新增的 OCC% 监控列
+        ["OCC %", occ, np.nan, occ],
         ["Business Volume TTC", tot_bv_ttc, cm_bv_ttc, own_bv_ttc],
         ["VAT on outside turnover", tot_vat, cm_vat, own_vat],
         ["Business volume HT", tot_bv_ht, cm_bv_ht, own_bv_ht],
@@ -269,18 +269,6 @@ def style_excel_sheet(ws, df):
 # --- Streamlit UI ---
 st.set_page_config(layout="wide", page_title="B-Case Decision Engine Pro V39")
 
-# --- CSS 全局覆盖 (与迎宾页面字体对齐) ---
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@300;400;500;600&display=swap');
-    
-    h1, h2, h3 { font-family: 'Playfair Display', serif !important; color: #1D263B; }
-    .stDataFrame { border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.03); }
-    .stSidebar { background-color: #F8F9FA !important; border-right: 1px solid #EAECEF; }
-</style>
-""", unsafe_allow_html=True)
-
-
 # --- 权限控制 ---
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -303,7 +291,7 @@ if uploaded_file:
     df = pd.read_csv(uploaded_file)
     df.columns = [c.strip() for c in df.columns]
     
-    # 🌟 级联筛选器
+    # 🌟 级联筛选器：选完度假村后，只显示有数据的对应年份
     df['Resort'] = df['Resort'].astype(str).str.strip()
     resorts = sorted(df['Resort'].unique())
     sel_resort = st.sidebar.selectbox("选择度假村", resorts)
@@ -335,6 +323,7 @@ if uploaded_file:
     st.header("📥 模块二：业务录入 (V1 Forecast)")
     x_ratio = st.number_input("参数 X (Local Income 占 BV TTC 的比例 %)", value=10.0) / 100
     
+    # 提取 Full Year 的 Capacity 作为默认值
     d_ref_full = get_bench_data(df, sel_resort, sel_year, MONTH_MAP["Full Year"])
     capa_default = d_ref_full['Capa'] / 12 if d_ref_full['Capa'] else 23000.0
     
@@ -379,6 +368,8 @@ if uploaded_file:
     
     def render_m4_adj(p_name, v1_data, bench_data):
         st.subheader(f"🛠️ {p_name} 实时精修面板")
+        
+        # 🌟 修复回调：直接使用 bench_data 进行基础单价计算！保证薪资和成本被正确提取并除以 Benchmark ETP。
         hn_b = bench_data['HN']
         
         fb_uc = (bench_data['VC_FB']*1000)/hn_b if hn_b else 0
@@ -409,6 +400,8 @@ if uploaded_file:
         v2 = v1_data.copy()
         v2['VC_FB'] = (afters[0] * v2['HN']) / 1000
         v2['VC_Ski'] = (afters[1] * v2['HN']) / 1000
+        
+        # 将调整后的单位成本，乘回原始的 Benchmark ETP 来得到 V2 预算
         v2['Sal_GOF'] = (afters[2] * bench_data['ETP_GOF']) / 1000
         v2['Sal_GOL'] = (afters[3] * bench_data['ETP_GOL']) / 1000
         v2['Sal_GE'] = (afters[4] * bench_data['ETP_GE']) / 1000
