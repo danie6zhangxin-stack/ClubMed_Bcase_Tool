@@ -315,7 +315,7 @@ if not st.session_state["authenticated"]:
     st.title("🔐 Club Med B-Case Tool")
     password = st.text_input("Access Password", type="password")
     if st.button("Login"):
-        if password == "CM2026Daniel": 
+        if password == "CM2026": 
             st.session_state["authenticated"] = True
             st.rerun()
         else:
